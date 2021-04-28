@@ -41,6 +41,7 @@ import { CalverTagParts } from '../../helpers/tagParts/getCalverTagParts';
 import { CenteredCircularProgress } from '../../components/CenteredCircularProgress';
 import { ComponentConfigPatch } from '../../types/types';
 import { Differ } from '../../components/Differ';
+import { getPatchCommitSuffix } from './helpers/getPatchCommitSuffix';
 import { GitHubReleaseManagerError } from '../../errors/GitHubReleaseManagerError';
 import { ResponseStepDialog } from '../../components/ResponseStepDialog/ResponseStepDialog';
 import { SemverTagParts } from '../../helpers/tagParts/getSemverTagParts';
@@ -158,7 +159,11 @@ export const PatchBody = ({
             const commitExistsOnReleaseBranch = !!githubDataResponse.value?.recentCommitsOnReleaseBranch.find(
               releaseBranchCommit =>
                 releaseBranchCommit.sha === commit.sha ||
-                releaseBranchCommit.commit.message.includes(commit.sha), // The selected patch commit's sha is included in the commit message
+                // The selected patch commit's sha is included in the commit message,
+                // which means it's part of a previous patch
+                releaseBranchCommit.commit.message.includes(
+                  getPatchCommitSuffix({ commitSha: commit.sha }),
+                ),
             );
             const hasNoParent = !commit.firstParentSha;
 

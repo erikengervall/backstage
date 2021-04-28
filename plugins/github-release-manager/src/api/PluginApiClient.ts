@@ -20,7 +20,7 @@ import { readGitHubIntegrationConfigs } from '@backstage/integration';
 
 import { CalverTagParts } from '../helpers/tagParts/getCalverTagParts';
 import { DISABLE_CACHE } from '../constants/constants';
-import { Project } from '../contexts/ProjectContext';
+import { OwnerRepo, UnboxArray, UnboxReturnedPromise } from '../types/helpers';
 import { SemverTagParts } from '../helpers/tagParts/getSemverTagParts';
 
 export class PluginApiClient implements IPluginApiClient {
@@ -75,11 +75,11 @@ export class PluginApiClient implements IPluginApiClient {
     return this.host;
   }
 
-  public getRepoPath({ owner, repo }: OwnerRepo) {
+  public getRepoPath: IPluginApiClient['getRepoPath'] = ({ owner, repo }) => {
     return `${owner}/${repo}`;
-  }
+  };
 
-  async getOwners() {
+  getOwners: IPluginApiClient['getOwners'] = async () => {
     const { octokit } = await this.getOctokit();
     const orgListResponse = await octokit.paginate(
       octokit.orgs.listForAuthenticatedUser,
@@ -89,9 +89,9 @@ export class PluginApiClient implements IPluginApiClient {
     return {
       owners: orgListResponse.map(organization => organization.login),
     };
-  }
+  };
 
-  async getRepositories({ owner }: { owner: string }) {
+  getRepositories: IPluginApiClient['getRepositories'] = async ({ owner }) => {
     const { octokit } = await this.getOctokit();
 
     const repositoryResponse = await octokit
@@ -112,24 +112,23 @@ export class PluginApiClient implements IPluginApiClient {
     return {
       repositories: repositoryResponse.map(repository => repository.name),
     };
-  }
+  };
 
-  async getUsername() {
+  getUsername: IPluginApiClient['getUsername'] = async () => {
     const { octokit } = await this.getOctokit();
     const userResponse = await octokit.users.getAuthenticated();
 
     return {
       username: userResponse.data.login,
+      email: userResponse.data.email,
     };
-  }
+  };
 
-  async getRecentCommits({
+  getRecentCommits: IPluginApiClient['getRecentCommits'] = async ({
     owner,
     repo,
     releaseBranchName,
-  }: {
-    releaseBranchName?: string;
-  } & OwnerRepo) {
+  }) => {
     const { octokit } = await this.getOctokit();
     const recentCommitsResponse = await octokit.repos.listCommits({
       owner,
@@ -150,9 +149,12 @@ export class PluginApiClient implements IPluginApiClient {
       },
       firstParentSha: commit.parents?.[0]?.sha,
     }));
-  }
+  };
 
-  async getLatestRelease({ owner, repo }: OwnerRepo) {
+  getLatestRelease: IPluginApiClient['getLatestRelease'] = async ({
+    owner,
+    repo,
+  }) => {
     const { octokit } = await this.getOctokit();
     const { data: latestReleases } = await octokit.repos.listReleases({
       owner,
@@ -175,9 +177,12 @@ export class PluginApiClient implements IPluginApiClient {
       htmlUrl: latestRelease.html_url,
       body: latestRelease.body,
     };
-  }
+  };
 
-  async getRepository({ owner, repo }: OwnerRepo) {
+  getRepository: IPluginApiClient['getRepository'] = async ({
+    owner,
+    repo,
+  }) => {
     const { octokit } = await this.getOctokit();
     const { data: repository } = await octokit.repos.get({
       owner,
@@ -190,15 +195,13 @@ export class PluginApiClient implements IPluginApiClient {
       defaultBranch: repository.default_branch,
       name: repository.name,
     };
-  }
+  };
 
-  async getLatestCommit({
+  getLatestCommit: IPluginApiClient['getLatestCommit'] = async ({
     owner,
     repo,
     defaultBranch,
-  }: {
-    defaultBranch: GetRepositoryResult['defaultBranch'];
-  } & OwnerRepo) {
+  }) => {
     const { octokit } = await this.getOctokit();
     const { data: latestCommit } = await octokit.repos.getCommit({
       owner,
@@ -214,15 +217,13 @@ export class PluginApiClient implements IPluginApiClient {
         message: latestCommit.commit.message,
       },
     };
-  }
+  };
 
-  async getBranch({
+  getBranch: IPluginApiClient['getBranch'] = async ({
     owner,
     repo,
     branchName,
-  }: {
-    branchName: string;
-  } & OwnerRepo) {
+  }) => {
     const { octokit } = await this.getOctokit();
 
     const { data: branch } = await octokit.repos.getBranch({
@@ -246,24 +247,63 @@ export class PluginApiClient implements IPluginApiClient {
         },
       },
     };
-  }
+  };
 
-  createRc = {
-    createRef: async ({
+  createRc: IPluginApiClient['createRc'] = {
+    createReleaseBranch: async ({
       owner,
       repo,
       mostRecentSha,
       targetBranch,
-    }: {
-      mostRecentSha: string;
-      targetBranch: string;
-    } & OwnerRepo) => {
+    }) => {
       const { octokit } = await this.getOctokit();
-      const createRefResponse = await octokit.git.createRef({
+      const newReleaseBranch = await octokit.git.createRef({
         owner,
         repo,
         ref: `refs/heads/${targetBranch}`,
         sha: mostRecentSha,
+      });
+
+      return {
+        releaseBranchObjectSha: newReleaseBranch.data.object.sha,
+      };
+    },
+
+    createTagObject: async ({
+      owner,
+      repo,
+      releaseBranchObjectSha,
+      rcReleaseTag,
+      taggerName,
+      taggerEmail,
+    }) => {
+      const { octokit } = await this.getOctokit();
+      const createTagResponse = await octokit.git.createTag({
+        owner,
+        repo,
+        tag: rcReleaseTag,
+        message: `Tag generated by your friendly neighborhood Backstage Release Manager`,
+        object: releaseBranchObjectSha,
+        type: 'commit',
+        tagger: {
+          date: new Date().toISOString(),
+          name: taggerName,
+          email: taggerEmail,
+        },
+      });
+
+      return {
+        tagSha: createTagResponse.data.sha,
+      };
+    },
+
+    createRef: async ({ owner, repo, tagSha, rcReleaseTag }) => {
+      const { octokit } = await this.getOctokit();
+      const createRefResponse = await octokit.git.createRef({
+        owner,
+        repo,
+        ref: `refs/tags/${rcReleaseTag}`,
+        sha: tagSha,
       });
 
       return {
@@ -276,10 +316,7 @@ export class PluginApiClient implements IPluginApiClient {
       repo,
       previousReleaseBranch,
       nextReleaseBranch,
-    }: {
-      previousReleaseBranch: string;
-      nextReleaseBranch: string;
-    } & OwnerRepo) => {
+    }) => {
       const { octokit } = await this.getOctokit();
       const compareCommitsResponse = await octokit.repos.compareCommits({
         owner,
@@ -301,12 +338,7 @@ export class PluginApiClient implements IPluginApiClient {
       releaseName,
       rcBranch,
       releaseBody,
-    }: {
-      rcReleaseTag: string;
-      releaseName: string;
-      rcBranch: string;
-      releaseBody: string;
-    } & OwnerRepo) => {
+    }) => {
       const { octokit } = await this.getOctokit();
       const createReleaseResponse = await octokit.repos.createRelease({
         owner,
@@ -326,18 +358,14 @@ export class PluginApiClient implements IPluginApiClient {
     },
   };
 
-  patch = {
+  patch: IPluginApiClient['patch'] = {
     createTempCommit: async ({
       owner,
       repo,
       tagParts,
       releaseBranchTree,
       selectedPatchCommit,
-    }: {
-      tagParts: SemverTagParts | CalverTagParts;
-      releaseBranchTree: string;
-      selectedPatchCommit: GetRecentCommitsResultSingle;
-    } & OwnerRepo) => {
+    }) => {
       const { octokit } = await this.getOctokit();
       const { data: tempCommit } = await octokit.git.createCommit({
         owner,
@@ -358,12 +386,9 @@ export class PluginApiClient implements IPluginApiClient {
       repo,
       releaseBranchName,
       tempCommit,
-    }: {
-      releaseBranchName: string;
-      tempCommit: CreateTempCommitResult;
-    } & OwnerRepo) => {
+    }) => {
       const { octokit } = await this.getOctokit();
-      // await octokit.request("PATCH reposrefs")
+
       await octokit.git.updateRef({
         owner,
         repo,
@@ -373,12 +398,7 @@ export class PluginApiClient implements IPluginApiClient {
       });
     },
 
-    merge: async ({
-      owner,
-      repo,
-      base,
-      head,
-    }: { base: string; head: string } & OwnerRepo) => {
+    merge: async ({ owner, repo, base, head }) => {
       const { octokit } = await this.getOctokit();
       const { data: merge } = await octokit.repos.merge({
         owner,
@@ -405,19 +425,15 @@ export class PluginApiClient implements IPluginApiClient {
       selectedPatchCommit,
       mergeTree,
       releaseBranchSha,
-    }: {
-      bumpedTag: string;
-      selectedPatchCommit: GetRecentCommitsResultSingle;
-      mergeTree: string;
-      releaseBranchSha: string;
-    } & OwnerRepo) => {
+      messageSuffix,
+    }) => {
       const { octokit } = await this.getOctokit();
       const { data: cherryPickCommit } = await octokit.git.createCommit({
         owner,
         repo,
         message: `[patch ${bumpedTag}] ${selectedPatchCommit.commit.message}
 
-${selectedPatchCommit.sha}`,
+${messageSuffix}`,
         tree: mergeTree,
         parents: [releaseBranchSha],
       });
@@ -433,10 +449,7 @@ ${selectedPatchCommit.sha}`,
       repo,
       releaseBranchName,
       cherryPickCommit,
-    }: {
-      releaseBranchName: string;
-      cherryPickCommit: CreateCherryPickCommitResult;
-    } & OwnerRepo) => {
+    }) => {
       const { octokit } = await this.getOctokit();
       const { data: updatedReference } = await octokit.git.updateRef({
         owner,
@@ -459,10 +472,9 @@ ${selectedPatchCommit.sha}`,
       repo,
       bumpedTag,
       updatedReference,
-    }: {
-      bumpedTag: string;
-      updatedReference: ReplaceTempCommitResult;
-    } & OwnerRepo) => {
+      taggerName,
+      taggerEmail,
+    }) => {
       const { octokit } = await this.getOctokit();
       const { data: createdTagObject } = await octokit.git.createTag({
         owner,
@@ -472,6 +484,11 @@ ${selectedPatchCommit.sha}`,
         tag: bumpedTag,
         object: updatedReference.object.sha,
         type: 'commit',
+        tagger: {
+          date: new Date().toISOString(),
+          email: taggerEmail,
+          name: taggerName,
+        },
       });
 
       return {
@@ -480,15 +497,7 @@ ${selectedPatchCommit.sha}`,
       };
     },
 
-    createReference: async ({
-      owner,
-      repo,
-      bumpedTag,
-      createdTagObject,
-    }: {
-      bumpedTag: string;
-      createdTagObject: CreateTagObjectResult;
-    } & OwnerRepo) => {
+    createReference: async ({ owner, repo, bumpedTag, createdTagObject }) => {
       const { octokit } = await this.getOctokit();
       const { data: reference } = await octokit.git.createRef({
         owner,
@@ -509,12 +518,7 @@ ${selectedPatchCommit.sha}`,
       latestRelease,
       tagParts,
       selectedPatchCommit,
-    }: {
-      bumpedTag: string;
-      latestRelease: NonNullable<GetLatestReleaseResult>;
-      tagParts: SemverTagParts | CalverTagParts;
-      selectedPatchCommit: GetRecentCommitsResultSingle;
-    } & OwnerRepo) => {
+    }) => {
       const { octokit } = await this.getOctokit();
       const { data: updatedRelease } = await octokit.repos.updateRelease({
         owner,
@@ -536,16 +540,8 @@ ${selectedPatchCommit.commit.message}`,
     },
   };
 
-  promoteRc = {
-    promoteRelease: async ({
-      owner,
-      repo,
-      releaseId,
-      releaseVersion,
-    }: {
-      releaseId: NonNullable<GetLatestReleaseResult>['id'];
-      releaseVersion: string;
-    } & OwnerRepo) => {
+  promoteRc: IPluginApiClient['promoteRc'] = {
+    promoteRelease: async ({ owner, repo, releaseId, releaseVersion }) => {
       const { octokit } = await this.getOctokit();
       const { data: promotedRelease } = await octokit.repos.updateRelease({
         owner,
@@ -563,8 +559,8 @@ ${selectedPatchCommit.commit.message}`,
     },
   };
 
-  stats = {
-    getAllTags: async ({ owner, repo }: OwnerRepo) => {
+  stats: IPluginApiClient['stats'] = {
+    getAllTags: async ({ owner, repo }) => {
       const { octokit } = await this.getOctokit();
 
       const tags = await octokit.paginate(octokit.repos.listTags, {
@@ -580,7 +576,7 @@ ${selectedPatchCommit.commit.message}`,
       }));
     },
 
-    getAllReleases: async ({ owner, repo }: OwnerRepo) => {
+    getAllReleases: async ({ owner, repo }) => {
       const { octokit } = await this.getOctokit();
 
       const releases = await octokit.paginate(octokit.repos.listReleases, {
@@ -599,7 +595,7 @@ ${selectedPatchCommit.commit.message}`,
       }));
     },
 
-    getCommit: async ({ owner, repo, ref }: { ref: string } & OwnerRepo) => {
+    getCommit: async ({ owner, repo, ref }) => {
       const { octokit } = await this.getOctokit();
 
       const { data: commit } = await octokit.repos.getCommit({
@@ -615,347 +611,381 @@ ${selectedPatchCommit.commit.message}`,
   };
 }
 
-type UnboxPromise<T extends Promise<any>> = T extends Promise<infer U>
-  ? U
-  : never;
+export interface IPluginApiClient {
+  getHost: () => string;
 
-type UnboxReturnedPromise<
-  T extends (...args: any) => Promise<any>
-> = UnboxPromise<ReturnType<T>>;
+  getRepoPath: (args: OwnerRepo) => string;
 
-type UnboxArray<T> = T extends (infer U)[] ? U : T;
+  getOwners: () => Promise<{
+    owners: string[];
+  }>;
 
-type OwnerRepo = {
-  owner: Project['owner'];
-  repo: Project['repo'];
-};
+  getRepositories: (args: {
+    owner: OwnerRepo['owner'];
+  }) => Promise<{
+    repositories: string[];
+  }>;
 
-type GetHost = () => string;
+  getUsername: (
+    args: OwnerRepo,
+  ) => Promise<{
+    username: string;
+    email: string | null;
+  }>;
 
-type GetRepoPath = (args: OwnerRepo) => string;
+  getRecentCommits: (
+    args: {
+      releaseBranchName?: string;
+    } & OwnerRepo,
+  ) => Promise<
+    {
+      htmlUrl: string;
+      sha: string;
+      author: {
+        htmlUrl?: string;
+        login?: string;
+      };
+      commit: {
+        message: string;
+      };
+      firstParentSha?: string;
+    }[]
+  >;
 
-type GetOwners = () => Promise<{
-  owners: string[];
-}>;
-export type GetOwnersResult = UnboxReturnedPromise<GetOwners>;
-
-type GetRepositories = (args: {
-  owner: OwnerRepo['owner'];
-}) => Promise<{
-  repositories: string[];
-}>;
-export type GetRepositoriesResult = UnboxReturnedPromise<GetRepositories>;
-
-type GetUsername = (
-  args: OwnerRepo,
-) => Promise<{
-  username: string;
-}>;
-export type GetUsernameResult = UnboxReturnedPromise<GetUsername>;
-
-type GetRecentCommits = (
-  args: {
-    releaseBranchName?: string;
-  } & OwnerRepo,
-) => Promise<
-  {
+  getLatestRelease: (
+    args: OwnerRepo,
+  ) => Promise<{
+    targetCommitish: string;
+    tagName: string;
+    prerelease: boolean;
+    id: number;
     htmlUrl: string;
+    body?: string | null;
+  } | null>;
+
+  getRepository: (
+    args: OwnerRepo,
+  ) => Promise<{
+    pushPermissions: boolean | undefined;
+    defaultBranch: string;
+    name: string;
+  }>;
+
+  getLatestCommit: (
+    args: {
+      defaultBranch: string;
+    } & OwnerRepo,
+  ) => Promise<{
     sha: string;
-    author: {
-      htmlUrl?: string;
-      login?: string;
-    };
+    htmlUrl: string;
     commit: {
       message: string;
     };
-    firstParentSha?: string;
-  }[]
->;
-export type GetRecentCommitsResult = UnboxReturnedPromise<GetRecentCommits>;
-export type GetRecentCommitsResultSingle = UnboxArray<GetRecentCommitsResult>;
+  }>;
 
-type GetLatestRelease = (
-  args: OwnerRepo,
-) => Promise<{
-  targetCommitish: string;
-  tagName: string;
-  prerelease: boolean;
-  id: number;
-  htmlUrl: string;
-  body?: string | null;
-} | null>;
-export type GetLatestReleaseResult = UnboxReturnedPromise<GetLatestRelease>;
-
-type GetRepository = (
-  args: OwnerRepo,
-) => Promise<{
-  pushPermissions: boolean | undefined;
-  defaultBranch: string;
-  name: string;
-}>;
-export type GetRepositoryResult = UnboxReturnedPromise<GetRepository>;
-
-type GetLatestCommit = (
-  args: {
-    defaultBranch: string;
-  } & OwnerRepo,
-) => Promise<{
-  sha: string;
-  htmlUrl: string;
-  commit: {
-    message: string;
-  };
-}>;
-export type GetLatestCommitResult = UnboxReturnedPromise<GetLatestCommit>;
-
-type GetBranch = (
-  args: {
-    branchName: string;
-  } & OwnerRepo,
-) => Promise<{
-  name: string;
-  links: {
-    html: string;
-  };
-  commit: {
-    sha: string;
+  getBranch: (
+    args: {
+      branchName: string;
+    } & OwnerRepo,
+  ) => Promise<{
+    name: string;
+    links: {
+      html: string;
+    };
     commit: {
-      tree: {
-        sha: string;
+      sha: string;
+      commit: {
+        tree: {
+          sha: string;
+        };
       };
     };
-  };
-}>;
-export type GetBranchResult = UnboxReturnedPromise<GetBranch>;
+  }>;
 
-/**
- * CreateRc
- */
-type CreateRef = (
-  args: {
-    mostRecentSha: string;
-    targetBranch: string;
-  } & OwnerRepo,
-) => Promise<{
-  ref: string;
-}>;
-export type CreateRefResult = UnboxReturnedPromise<CreateRef>;
-
-type GetComparison = (
-  args: {
-    previousReleaseBranch: string;
-    nextReleaseBranch: string;
-  } & OwnerRepo,
-) => Promise<{
-  htmlUrl: string;
-  aheadBy: number;
-}>;
-export type GetComparisonResult = UnboxReturnedPromise<GetComparison>;
-
-type CreateRelease = (
-  args: {
-    rcReleaseTag: string;
-    releaseName: string;
-    rcBranch: string;
-    releaseBody: string;
-  } & OwnerRepo,
-) => Promise<{
-  name: string | null;
-  htmlUrl: string;
-  tagName: string;
-}>;
-export type CreateReleaseResult = UnboxReturnedPromise<CreateRelease>;
-
-/**
- * Patch
- */
-type CreateTempCommit = (
-  args: {
-    tagParts: SemverTagParts | CalverTagParts;
-    releaseBranchTree: string;
-    selectedPatchCommit: UnboxArray<
-      UnboxReturnedPromise<IPluginApiClient['getRecentCommits']>
-    >;
-  } & OwnerRepo,
-) => Promise<{
-  message: string;
-  sha: string;
-}>;
-export type CreateTempCommitResult = UnboxReturnedPromise<CreateTempCommit>;
-
-type ForceBranchHeadToTempCommit = (
-  args: {
-    releaseBranchName: string;
-    tempCommit: CreateTempCommitResult;
-  } & OwnerRepo,
-) => Promise<void>;
-export type ForceBranchHeadToTempCommitResult = UnboxReturnedPromise<ForceBranchHeadToTempCommit>;
-
-type Merge = ({
-  base,
-  head,
-}: {
-  base: string;
-  head: string;
-} & OwnerRepo) => Promise<{
-  htmlUrl: string;
-  commit: {
-    message: string;
-    tree: {
-      sha: string;
-    };
-  };
-}>;
-export type MergeResult = UnboxReturnedPromise<Merge>;
-
-type CreateCherryPickCommit = (
-  args: {
-    bumpedTag: string;
-    selectedPatchCommit: UnboxArray<
-      UnboxReturnedPromise<IPluginApiClient['getRecentCommits']>
-    >;
-    mergeTree: string;
-    releaseBranchSha: string;
-  } & OwnerRepo,
-) => Promise<{
-  message: string;
-  sha: string;
-}>;
-export type CreateCherryPickCommitResult = UnboxReturnedPromise<CreateCherryPickCommit>;
-
-type ReplaceTempCommit = (
-  args: {
-    releaseBranchName: string;
-    cherryPickCommit: UnboxReturnedPromise<
-      IPluginApiClient['patch']['createCherryPickCommit']
-    >;
-  } & OwnerRepo,
-) => Promise<{
-  ref: string;
-  object: {
-    sha: string;
-  };
-}>;
-export type ReplaceTempCommitResult = UnboxReturnedPromise<ReplaceTempCommit>;
-
-type CreateTagObject = ({
-  bumpedTag,
-  updatedReference,
-}: {
-  bumpedTag: string;
-  updatedReference: ReplaceTempCommitResult;
-} & OwnerRepo) => Promise<{
-  tag: string;
-  sha: string;
-}>;
-export type CreateTagObjectResult = UnboxReturnedPromise<CreateTagObject>;
-
-type CreateReference = (
-  args: {
-    bumpedTag: string;
-    createdTagObject: CreateTagObjectResult;
-  } & OwnerRepo,
-) => Promise<{
-  ref: string;
-}>;
-export type CreateReferenceResult = UnboxReturnedPromise<CreateReference>;
-
-type UpdateRelease = (
-  args: {
-    bumpedTag: string;
-    latestRelease: NonNullable<GetLatestReleaseResult>;
-    tagParts: SemverTagParts | CalverTagParts;
-    selectedPatchCommit: GetRecentCommitsResultSingle;
-  } & OwnerRepo,
-) => Promise<{
-  name: string | null;
-  tagName: string;
-  htmlUrl: string;
-}>;
-export type UpdateReleaseResult = UnboxReturnedPromise<UpdateRelease>;
-
-/**
- * PromoteRc
- */
-type PromoteRelease = (
-  args: {
-    releaseId: NonNullable<GetLatestReleaseResult>['id'];
-    releaseVersion: string;
-  } & OwnerRepo,
-) => Promise<{
-  name: string | null;
-  tagName: string;
-  htmlUrl: string;
-}>;
-export type PromoteReleaseResult = UnboxReturnedPromise<PromoteRelease>;
-
-/**
- * Stats
- */
-type GetAllTags = (
-  args: OwnerRepo,
-) => Promise<
-  Array<{
-    tagName: string;
-    sha: string;
-  }>
->;
-export type GetAllTagsResult = UnboxReturnedPromise<GetAllTags>;
-
-type GetAllReleases = (
-  args: OwnerRepo,
-) => Promise<
-  Array<{
-    id: number;
-    name: string | null;
-    tagName: string;
-    createdAt: string | null;
-    htmlUrl: string;
-  }>
->;
-export type GetAllReleasesResult = UnboxReturnedPromise<GetAllReleases>;
-
-type GetCommit = (
-  args: {
-    ref: string;
-  } & OwnerRepo,
-) => Promise<{
-  createdAt: string | undefined;
-}>;
-export type GetCommitResult = UnboxReturnedPromise<GetCommit>;
-
-export interface IPluginApiClient {
-  getHost: GetHost;
-  getRepoPath: GetRepoPath;
-  getOwners: GetOwners;
-  getRepositories: GetRepositories;
-  getUsername: GetUsername;
-  getRecentCommits: GetRecentCommits;
-  getLatestRelease: GetLatestRelease;
-  getRepository: GetRepository;
-  getLatestCommit: GetLatestCommit;
-  getBranch: GetBranch;
   createRc: {
-    createRef: CreateRef;
-    getComparison: GetComparison;
-    createRelease: CreateRelease;
+    createReleaseBranch: (
+      args: {
+        targetBranch: string;
+        mostRecentSha: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      releaseBranchObjectSha: string;
+    }>;
+
+    /**
+     * A tag object has to be created in
+     * order to create annotated tags
+     */
+    createTagObject: (
+      args: {
+        releaseBranchObjectSha: string;
+        rcReleaseTag: string;
+        taggerName?: string;
+        taggerEmail?: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      tagSha: string;
+    }>;
+
+    /**
+     * Create the reference using the
+     * tag object's sha
+     */
+    createRef: (
+      args: {
+        tagSha: string;
+        rcReleaseTag: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      ref: string;
+    }>;
+
+    getComparison: (
+      args: {
+        previousReleaseBranch: string;
+        nextReleaseBranch: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      htmlUrl: string;
+      aheadBy: number;
+    }>;
+
+    createRelease: (
+      args: {
+        rcReleaseTag: string;
+        releaseName: string;
+        rcBranch: string;
+        releaseBody: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      name: string | null;
+      htmlUrl: string;
+      tagName: string;
+    }>;
   };
   patch: {
-    createTempCommit: CreateTempCommit;
-    forceBranchHeadToTempCommit: ForceBranchHeadToTempCommit;
-    merge: Merge;
-    createCherryPickCommit: CreateCherryPickCommit;
-    replaceTempCommit: ReplaceTempCommit;
-    createTagObject: CreateTagObject;
-    createReference: CreateReference;
-    updateRelease: UpdateRelease;
+    createTempCommit: (
+      args: {
+        tagParts: SemverTagParts | CalverTagParts;
+        releaseBranchTree: string;
+        selectedPatchCommit: UnboxArray<
+          UnboxReturnedPromise<IPluginApiClient['getRecentCommits']>
+        >;
+      } & OwnerRepo,
+    ) => Promise<{
+      message: string;
+      sha: string;
+    }>;
+
+    forceBranchHeadToTempCommit: (
+      args: {
+        releaseBranchName: string;
+        tempCommit: CreateTempCommitResult;
+      } & OwnerRepo,
+    ) => Promise<void>;
+
+    merge: (
+      args: {
+        base: string;
+        head: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      htmlUrl: string;
+      commit: {
+        message: string;
+        tree: {
+          sha: string;
+        };
+      };
+    }>;
+
+    createCherryPickCommit: (
+      args: {
+        bumpedTag: string;
+        selectedPatchCommit: GetRecentCommitsResultSingle;
+        mergeTree: string;
+        releaseBranchSha: string;
+        /**
+         * The messageSuffix should be included at the
+         * end of the cherry-pick commit's message.
+         *
+         * This will help identify the origin commit
+         * and improve the UX for the patch feature.
+         */
+        messageSuffix: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      message: string;
+      sha: string;
+    }>;
+
+    replaceTempCommit: (
+      args: {
+        releaseBranchName: string;
+        cherryPickCommit: UnboxReturnedPromise<
+          IPluginApiClient['patch']['createCherryPickCommit']
+        >;
+      } & OwnerRepo,
+    ) => Promise<{
+      ref: string;
+      object: {
+        sha: string;
+      };
+    }>;
+
+    createTagObject: (
+      args: {
+        bumpedTag: string;
+        updatedReference: ReplaceTempCommitResult;
+        taggerName?: string;
+        taggerEmail?: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      tag: string;
+      sha: string;
+    }>;
+
+    createReference: (
+      args: {
+        bumpedTag: string;
+        createdTagObject: CreateTagObjectResult;
+      } & OwnerRepo,
+    ) => Promise<{
+      ref: string;
+    }>;
+
+    updateRelease: (
+      args: {
+        bumpedTag: string;
+        latestRelease: NonNullable<GetLatestReleaseResult>;
+        tagParts: SemverTagParts | CalverTagParts;
+        selectedPatchCommit: GetRecentCommitsResultSingle;
+      } & OwnerRepo,
+    ) => Promise<{
+      name: string | null;
+      tagName: string;
+      htmlUrl: string;
+    }>;
   };
+
   promoteRc: {
-    promoteRelease: PromoteRelease;
+    promoteRelease: (
+      args: {
+        releaseId: NonNullable<GetLatestReleaseResult>['id'];
+        releaseVersion: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      name: string | null;
+      tagName: string;
+      htmlUrl: string;
+    }>;
   };
+
   stats: {
-    getAllTags: GetAllTags;
-    getAllReleases: GetAllReleases;
-    getCommit: GetCommit;
+    getAllTags: (
+      args: OwnerRepo,
+    ) => Promise<
+      Array<{
+        tagName: string;
+        sha: string;
+      }>
+    >;
+
+    getAllReleases: (
+      args: OwnerRepo,
+    ) => Promise<
+      Array<{
+        id: number;
+        name: string | null;
+        tagName: string;
+        createdAt: string | null;
+        htmlUrl: string;
+      }>
+    >;
+
+    getCommit: (
+      args: {
+        ref: string;
+      } & OwnerRepo,
+    ) => Promise<{
+      createdAt: string | undefined;
+    }>;
   };
 }
+
+export type GetOwnersResult = UnboxReturnedPromise<
+  IPluginApiClient['getOwners']
+>;
+export type GetRepositoriesResult = UnboxReturnedPromise<
+  IPluginApiClient['getRepositories']
+>;
+export type GetUsernameResult = UnboxReturnedPromise<
+  IPluginApiClient['getUsername']
+>;
+export type GetRecentCommitsResult = UnboxReturnedPromise<
+  IPluginApiClient['getRecentCommits']
+>;
+export type GetRecentCommitsResultSingle = UnboxArray<GetRecentCommitsResult>;
+export type GetLatestReleaseResult = UnboxReturnedPromise<
+  IPluginApiClient['getLatestRelease']
+>;
+export type GetRepositoryResult = UnboxReturnedPromise<
+  IPluginApiClient['getRepository']
+>;
+export type GetLatestCommitResult = UnboxReturnedPromise<
+  IPluginApiClient['getLatestCommit']
+>;
+export type GetBranchResult = UnboxReturnedPromise<
+  IPluginApiClient['getBranch']
+>;
+export type CreateReleaseBranchResult = UnboxReturnedPromise<
+  IPluginApiClient['createRc']['createReleaseBranch']
+>;
+export type CreateTagObjectCreateRcResult = UnboxReturnedPromise<
+  IPluginApiClient['createRc']['createTagObject']
+>;
+export type CreateRefResult = UnboxReturnedPromise<
+  IPluginApiClient['createRc']['createRef']
+>;
+export type GetComparisonResult = UnboxReturnedPromise<
+  IPluginApiClient['createRc']['getComparison']
+>;
+export type CreateReleaseResult = UnboxReturnedPromise<
+  IPluginApiClient['createRc']['createRelease']
+>;
+export type CreateTempCommitResult = UnboxReturnedPromise<
+  IPluginApiClient['patch']['createTempCommit']
+>;
+export type ForceBranchHeadToTempCommitResult = UnboxReturnedPromise<
+  IPluginApiClient['patch']['forceBranchHeadToTempCommit']
+>;
+export type MergeResult = UnboxReturnedPromise<
+  IPluginApiClient['patch']['merge']
+>;
+export type CreateCherryPickCommitResult = UnboxReturnedPromise<
+  IPluginApiClient['patch']['createCherryPickCommit']
+>;
+export type ReplaceTempCommitResult = UnboxReturnedPromise<
+  IPluginApiClient['patch']['replaceTempCommit']
+>;
+export type CreateTagObjectResult = UnboxReturnedPromise<
+  IPluginApiClient['patch']['createTagObject']
+>;
+export type CreateReferenceResult = UnboxReturnedPromise<
+  IPluginApiClient['patch']['createReference']
+>;
+export type UpdateReleaseResult = UnboxReturnedPromise<
+  IPluginApiClient['patch']['updateRelease']
+>;
+export type PromoteReleaseResult = UnboxReturnedPromise<
+  IPluginApiClient['promoteRc']['promoteRelease']
+>;
+export type GetAllTagsResult = UnboxReturnedPromise<
+  IPluginApiClient['stats']['getAllTags']
+>;
+export type GetAllReleasesResult = UnboxReturnedPromise<
+  IPluginApiClient['stats']['getAllReleases']
+>;
+export type GetCommitResult = UnboxReturnedPromise<
+  IPluginApiClient['stats']['getCommit']
+>;

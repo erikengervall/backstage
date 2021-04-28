@@ -25,8 +25,8 @@ import {
   ComponentConfigPatch,
   ComponentConfigPromoteRc,
 } from './types/types';
-import { Features } from './features/Features';
 import { CenteredCircularProgress } from './components/CenteredCircularProgress';
+import { Features } from './features/Features';
 import { githubReleaseManagerApiRef } from './api/serviceApiRef';
 import { InfoCardPlus } from './components/InfoCardPlus';
 import { isProjectValid } from './helpers/isProjectValid';
@@ -34,6 +34,7 @@ import { PluginApiClientContext } from './contexts/PluginApiClientContext';
 import { ProjectContext, Project } from './contexts/ProjectContext';
 import { RepoDetailsForm } from './features/RepoDetailsForm/RepoDetailsForm';
 import { useQueryHandler } from './hooks/useQueryHandler';
+import { UserContext } from './contexts/UserContext';
 import { useStyles } from './styles/styles';
 
 export interface GitHubReleaseManagerProps {
@@ -81,18 +82,25 @@ export function GitHubReleaseManager(props: GitHubReleaseManagerProps) {
     return <Alert severity="error">Unable to retrieve username</Alert>;
   }
 
+  const user = {
+    username: usernameResponse.value.username,
+    email: usernameResponse.value.email ?? undefined,
+  };
+
   return (
     <PluginApiClientContext.Provider value={{ pluginApiClient }}>
       <ProjectContext.Provider value={{ project }}>
-        <div className={classes.root}>
-          <ContentHeader title="GitHub Release Manager" />
+        <UserContext.Provider value={{ user }}>
+          <div className={classes.root}>
+            <ContentHeader title="GitHub Release Manager" />
 
-          <InfoCardPlus>
-            <RepoDetailsForm username={usernameResponse.value.username} />
-          </InfoCardPlus>
+            <InfoCardPlus>
+              <RepoDetailsForm username={usernameResponse.value.username} />
+            </InfoCardPlus>
 
-          {isProjectValid(project) && <Features features={props.features} />}
-        </div>
+            {isProjectValid(project) && <Features features={props.features} />}
+          </div>
+        </UserContext.Provider>
       </ProjectContext.Provider>
     </PluginApiClientContext.Provider>
   );

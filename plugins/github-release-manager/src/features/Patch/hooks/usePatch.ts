@@ -23,10 +23,12 @@ import {
 } from '../../../api/PluginApiClient';
 import { CalverTagParts } from '../../../helpers/tagParts/getCalverTagParts';
 import { ComponentConfigPatch, CardHook } from '../../../types/types';
+import { getPatchCommitSuffix } from '../helpers/getPatchCommitSuffix';
 import { Project } from '../../../contexts/ProjectContext';
 import { SemverTagParts } from '../../../helpers/tagParts/getSemverTagParts';
 import { usePluginApiClientContext } from '../../../contexts/PluginApiClientContext';
 import { useResponseSteps } from '../../../hooks/useResponseSteps';
+import { useUserContext } from '../../../contexts/UserContext';
 
 interface Patch {
   bumpedTag: string;
@@ -45,6 +47,7 @@ export function usePatch({
   successCb,
 }: Patch): CardHook<GetRecentCommitsResultSingle> {
   const { pluginApiClient } = usePluginApiClientContext();
+  const { user } = useUserContext();
   const {
     responseSteps,
     addStepToResponseSteps,
@@ -186,6 +189,9 @@ export function usePatch({
         mergeTree: mergeRes.value.commit.tree.sha,
         releaseBranchSha,
         selectedPatchCommit: releaseBranchRes.value.selectedPatchCommit,
+        messageSuffix: getPatchCommitSuffix({
+          commitSha: releaseBranchRes.value.selectedPatchCommit.sha,
+        }),
       })
       .catch(asyncCatcher);
 
@@ -239,6 +245,8 @@ export function usePatch({
         repo: project.repo,
         bumpedTag,
         updatedReference: updatedRefRes.value,
+        taggerName: user.username,
+        taggerEmail: user.email,
       })
       .catch(asyncCatcher);
 
