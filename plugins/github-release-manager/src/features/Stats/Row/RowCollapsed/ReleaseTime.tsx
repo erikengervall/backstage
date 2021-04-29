@@ -21,19 +21,19 @@ import { Alert } from '@material-ui/lab';
 
 import { CenteredCircularProgress } from '../../../../components/CenteredCircularProgress';
 import { ReleaseStats } from '../../contexts/ReleaseStatsContext';
-import { useGetCommit } from '../../hooks/useGetCommit';
+import { useGetTagDate } from '../../hooks/useGetTagDate';
 
 interface ReleaseTimeProps {
   releaseStat: ReleaseStats['releases']['0'];
 }
 
 export function ReleaseTime({ releaseStat }: ReleaseTimeProps) {
-  const firstCandidateSha = [...releaseStat.candidates].reverse()[0]?.sha;
-  const { commit: releaseCut } = useGetCommit({ ref: firstCandidateSha });
+  const firstCandidateTag = [...releaseStat.candidates].reverse()[0];
+  const { tagDate: releaseCut } = useGetTagDate({ tag: firstCandidateTag });
 
-  const mostRecentVersionSha = releaseStat.versions[0]?.sha;
-  const { commit: releaseComplete } = useGetCommit({
-    ref: mostRecentVersionSha,
+  const mostRecentVersionTag = releaseStat.versions[0];
+  const { tagDate: releaseComplete } = useGetTagDate({
+    tag: mostRecentVersionTag,
   });
 
   if (releaseCut.loading || releaseComplete.loading) {
@@ -54,9 +54,9 @@ export function ReleaseTime({ releaseStat }: ReleaseTimeProps) {
   }
 
   const diff =
-    releaseCut.value?.createdAt && releaseComplete.value?.createdAt
-      ? DateTime.fromISO(releaseComplete.value.createdAt)
-          .diff(DateTime.fromISO(releaseCut.value.createdAt), ['days', 'hours'])
+    releaseCut.value?.tagDate && releaseComplete.value?.tagDate
+      ? DateTime.fromISO(releaseComplete.value.tagDate)
+          .diff(DateTime.fromISO(releaseCut.value.tagDate), ['days', 'hours'])
           .toObject()
       : { days: -1 };
 
@@ -71,8 +71,8 @@ export function ReleaseTime({ releaseStat }: ReleaseTimeProps) {
       >
         <Typography variant="body1">
           {releaseStat.versions.length === 0 ? '-' : 'Release completed '}
-          {releaseComplete.value?.createdAt &&
-            DateTime.fromISO(releaseComplete.value.createdAt)
+          {releaseComplete.value?.tagDate &&
+            DateTime.fromISO(releaseComplete.value.tagDate)
               .setLocale('sv-SE')
               .toFormat('yyyy-MM-dd')}
         </Typography>
@@ -103,8 +103,8 @@ export function ReleaseTime({ releaseStat }: ReleaseTimeProps) {
       >
         <Typography variant="body1">
           Release Candidate created{' '}
-          {releaseCut.value?.createdAt &&
-            DateTime.fromISO(releaseCut.value.createdAt)
+          {releaseCut.value?.tagDate &&
+            DateTime.fromISO(releaseCut.value.tagDate)
               .setLocale('sv-SE')
               .toFormat('yyyy-MM-dd')}
         </Typography>

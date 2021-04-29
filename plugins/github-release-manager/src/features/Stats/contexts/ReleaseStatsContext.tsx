@@ -34,6 +34,8 @@ export interface ReleaseStats {
       candidates: {
         tagName: string;
         sha: string;
+        /** 'commit' | 'tree' | 'blob' */
+        type: string;
       }[];
 
       /**
@@ -42,6 +44,8 @@ export interface ReleaseStats {
       versions: {
         tagName: string;
         sha: string;
+        /** 'commit' | 'tree' | 'blob' */
+        type: string;
       }[];
     };
   };

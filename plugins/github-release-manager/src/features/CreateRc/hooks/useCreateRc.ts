@@ -72,7 +72,7 @@ export function useCreateRc({
       .getLatestCommit({
         owner: project.owner,
         repo: project.repo,
-        defaultBranch,
+        branch: defaultBranch,
       })
       .catch(asyncCatcher);
 
@@ -128,22 +128,14 @@ export function useCreateRc({
     abortIfError(releaseBranchRes.error);
     if (!releaseBranchRes.value) return undefined;
 
-    const createdTagObject = await pluginApiClient.createRc
+    const createdTagObject = await pluginApiClient
       .createTagObject({
         owner: project.owner,
         repo: project.repo,
-        rcReleaseTag: nextGitHubInfo.rcReleaseTag,
-        releaseBranchObjectSha: releaseBranchRes.value.releaseBranchObjectSha,
+        tag: nextGitHubInfo.rcReleaseTag,
+        object: releaseBranchRes.value.releaseBranchObjectSha,
         taggerName: user.username,
         taggerEmail: user.email,
-      })
-      .catch(error => {
-        if (error?.body?.message === 'Reference already exists') {
-          throw new GitHubReleaseManagerError(
-            `Branch "${nextGitHubInfo.rcBranch}" already exists: .../tree/${nextGitHubInfo.rcBranch}`,
-          );
-        }
-        throw error;
       })
       .catch(asyncCatcher);
 
@@ -158,17 +150,17 @@ export function useCreateRc({
   }, [releaseBranchRes.value, releaseBranchRes.error]);
 
   /**
-   * (4)
+   * (4) Create reference for tag object
    */
   const createRcRes = useAsync(async () => {
     abortIfError(tagObjectRes.error);
     if (!tagObjectRes.value) return undefined;
 
-    const createdRef = await pluginApiClient.createRc
-      .createRef({
+    const createdRef = await pluginApiClient
+      .createReference({
         owner: project.owner,
         repo: project.repo,
-        rcReleaseTag: nextGitHubInfo.rcReleaseTag,
+        tagName: nextGitHubInfo.rcReleaseTag,
         tagSha: tagObjectRes.value.tagSha,
       })
       .catch(error => {

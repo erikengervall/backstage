@@ -239,12 +239,12 @@ export function usePatch({
     abortIfError(updatedRefRes.error);
     if (!updatedRefRes.value) return undefined;
 
-    const createdTagObject = await pluginApiClient.patch
+    const createdTagObject = await pluginApiClient
       .createTagObject({
         owner: project.owner,
         repo: project.repo,
-        bumpedTag,
-        updatedReference: updatedRefRes.value,
+        tag: bumpedTag,
+        object: updatedRefRes.value.object.sha,
         taggerName: user.username,
         taggerEmail: user.email,
       })
@@ -252,7 +252,7 @@ export function usePatch({
 
     addStepToResponseSteps({
       message: 'Created new tag object',
-      secondaryMessage: `with name "${createdTagObject.tag}"`,
+      secondaryMessage: `with name "${createdTagObject.tagName}"`,
     });
 
     return {
@@ -268,18 +268,18 @@ export function usePatch({
     abortIfError(createdTagObjRes.error);
     if (!createdTagObjRes.value) return undefined;
 
-    const reference = await pluginApiClient.patch
+    const reference = await pluginApiClient
       .createReference({
         owner: project.owner,
         repo: project.repo,
-        bumpedTag,
-        createdTagObject: createdTagObjRes.value,
+        tagName: bumpedTag,
+        tagSha: createdTagObjRes.value.tagSha,
       })
       .catch(asyncCatcher);
 
     addStepToResponseSteps({
       message: `Created new reference "${reference.ref}"`,
-      secondaryMessage: `for tag object "${createdTagObjRes.value.tag}"`,
+      secondaryMessage: `for tag object "${createdTagObjRes.value.tagName}"`,
     });
 
     return {

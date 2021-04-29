@@ -22,6 +22,7 @@ import { getReleaseCommitPairs } from '../helpers/getReleaseCommitPairs';
 import { usePluginApiClientContext } from '../../../../contexts/PluginApiClientContext';
 import { useProjectContext } from '../../../../contexts/ProjectContext';
 import { useReleaseStatsContext } from '../../contexts/ReleaseStatsContext';
+import { getTagDate } from '../../helpers/getTagDate';
 
 export type ReleaseCommitPairs = Array<{
   baseVersion: string;
@@ -79,19 +80,11 @@ export function useGetReleaseTimes() {
     const { baseVersion, startCommit, endCommit } = releaseCommitPairs[index];
 
     const [
-      { createdAt: startCommitCreatedAt },
-      { createdAt: endCommitCreatedAt },
+      { tagDate: startCommitCreatedAt },
+      { tagDate: endCommitCreatedAt },
     ] = await Promise.all([
-      pluginApiClient.stats.getCommit({
-        owner: project.owner,
-        repo: project.repo,
-        ref: startCommit.sha,
-      }),
-      pluginApiClient.stats.getCommit({
-        owner: project.owner,
-        repo: project.repo,
-        ref: endCommit.sha,
-      }),
+      getTagDate({ pluginApiClient, project, tagSha: startCommit.sha }),
+      getTagDate({ pluginApiClient, project, tagSha: endCommit.sha }),
     ]);
 
     const releaseTime: ReleaseTime = {
